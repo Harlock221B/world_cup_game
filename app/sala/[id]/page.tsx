@@ -274,10 +274,14 @@ export default function SalaPartida() {
   // TELA 3: SIMULAÇÃO DA PARTIDA
   // ==========================================
   if (dadosSala?.status === 'simulacao') {
-   // Precisamos dizer ao TS que esses objetos contêm o tipo Jogador
+   // 1. PRIMEIRO declaramos as variáveis extraindo os dados do banco
+    const meuTime = dadosSala.times?.[meuId] || {};
+    const opTime = dadosSala.times?.[outroJogadorId] || {};
+
+    // 2. DEPOIS dizemos ao TypeScript que elas são do tipo Record<string, Jogador>
     const meuTimeTyped = meuTime as unknown as Record<string, Jogador>;
     const opTimeTyped = opTime as unknown as Record<string, Jogador>;
-
+    
     const meuAtaque = Math.round(Object.values(meuTimeTyped).reduce((a, j) => a + j.ataque, 0) / 11);
     const minhaDefesa = Math.round(Object.values(meuTimeTyped).reduce((a, j) => a + j.defesa, 0) / 11);
     const opAtaque = Math.round(Object.values(opTimeTyped).reduce((a, j) => a + j.ataque, 0) / 11);
