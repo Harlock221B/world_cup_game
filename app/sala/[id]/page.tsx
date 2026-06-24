@@ -274,14 +274,14 @@ export default function SalaPartida() {
   // TELA 3: SIMULAÇÃO DA PARTIDA
   // ==========================================
   if (dadosSala?.status === 'simulacao') {
-    const meuTime = dadosSala.times?.[meuId] || {};
-    const opTime = dadosSala.times?.[outroJogadorId] || {};
-    
-    const meuAtaque = Math.round(Object.values(meuTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11) || 0;
-    const minhaDefesa = Math.round(Object.values(meuTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11) || 0;
-    const opAtaque = Math.round(Object.values(opTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11) || 0;
-    const opDefesa = Math.round(Object.values(opTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11) || 0;
+   // Precisamos dizer ao TS que esses objetos contêm o tipo Jogador
+    const meuTimeTyped = meuTime as unknown as Record<string, Jogador>;
+    const opTimeTyped = opTime as unknown as Record<string, Jogador>;
 
+    const meuAtaque = Math.round(Object.values(meuTimeTyped).reduce((a, j) => a + j.ataque, 0) / 11);
+    const minhaDefesa = Math.round(Object.values(meuTimeTyped).reduce((a, j) => a + j.defesa, 0) / 11);
+    const opAtaque = Math.round(Object.values(opTimeTyped).reduce((a, j) => a + j.ataque, 0) / 11);
+    const opDefesa = Math.round(Object.values(opTimeTyped).reduce((a, j) => a + j.defesa, 0) / 11);
     const isFim = minutoJogo >= 90;
     const ganhei = placarLocal.meu > placarLocal.op;
     const empate = placarLocal.meu === placarLocal.op;
