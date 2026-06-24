@@ -236,7 +236,7 @@ export default function SalaPartida() {
         status: 'simulacao',
         resultado: {
           [meuId]: golsMeu,
-          [outroJogador]: golsOp
+          [outroJogadorId]: golsOp
         }
       });
     } else {
