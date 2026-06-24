@@ -7,6 +7,7 @@ import { doc, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
 import Campo from '../../../components/jogo/Campo';
 import { selecoesMock, Selecao, Jogador } from '../../../lib/selecoes';
 
+// (Mapeamentos de formação mantidos iguais...)
 const mapFormacoes: Record<string, { id: string; label: string; top: string; left: string }[]> = {
   '4-3-3': [
     { id: 'gol', label: 'GOL', top: '88%', left: '50%' },
@@ -54,26 +55,20 @@ export default function SalaPartida() {
   const router = useRouter();
   const salaId = params.id as string;
 
-  // Estados Táticos
   const [formacao, setFormacao] = useState<string>('4-3-3');
-  const [estilo, setEstilo] = useState('Equilibrado');
-  
   const [dadosSala, setDadosSala] = useState<any>(null);
   const [carregando, setCarregando] = useState(true);
   const [meuId, setMeuId] = useState<string>('');
 
-  // Estados do Draft
   const [isRolling, setIsRolling] = useState(false);
   const [selecaoSorteada, setSelecaoSorteada] = useState<Selecao | null>(null);
   const [tempoRestante, setTempoRestante] = useState(0);
   const [jogadorSelecionado, setJogadorSelecionado] = useState<Jogador | null>(null);
   const [nomeTimeTemp, setNomeTimeTemp] = useState('');
 
-  // Estados da Simulação
   const [minutoJogo, setMinutoJogo] = useState(0);
   const [placarLocal, setPlacarLocal] = useState<{meu: number, op: number}>({ meu: 0, op: 0 });
 
-  // CONEXÃO COM FIREBASE
   useEffect(() => {
     if (!salaId) return;
 
@@ -108,30 +103,29 @@ export default function SalaPartida() {
     return () => unsub();
   }, [salaId, router]);
 
+  const jogadoresConectados = dadosSala?.jogadores || [];
+  const isSolo = jogadoresConectados.length === 1;
+  const outroJogadorId = isSolo ? 'CPU' : jogadoresConectados.find((id: string) => id !== meuId) || 'CPU';
+  
   const isMeuTurno = dadosSala?.turnoAtual === meuId;
   const isAdmin = dadosSala?.jogadores?.[0] === meuId;
   
-  // SISTEMA DE TIMEOUT E AUTO-PICK
   useEffect(() => {
     if (dadosSala?.status === 'draft' && dadosSala?.tempoFim) {
       const interval = setInterval(() => {
         const agora = Date.now();
         const restante = Math.max(0, Math.floor((dadosSala.tempoFim - agora) / 1000));
         setTempoRestante(restante);
-
         if (restante === 0 && isMeuTurno) executarAutoPick();
       }, 1000);
       return () => clearInterval(interval);
     }
   }, [dadosSala?.status, dadosSala?.tempoFim, isMeuTurno]);
 
-  // MOTOR DA SIMULAÇÃO (Cronómetro e Gols)
   useEffect(() => {
     if (dadosSala?.status === 'simulacao' && minutoJogo < 90 && dadosSala.resultado) {
       const timer = setTimeout(() => {
-        setMinutoJogo(prev => prev + 2); // Avança 2 minutos de cada vez
-        
-        // Revela os gols de forma progressiva baseada no resultado final gravado
+        setMinutoJogo(prev => prev + 2);
         const progresso = minutoJogo / 90;
         const meusGolsFinais = dadosSala.resultado[meuId] || 0;
         const opGolsFinais = dadosSala.resultado[outroJogadorId] || 0;
@@ -140,11 +134,9 @@ export default function SalaPartida() {
           meu: Math.floor(meusGolsFinais * progresso),
           op: Math.floor(opGolsFinais * progresso)
         });
-
-      }, 100); // Velocidade da simulação
+      }, 100);
       return () => clearTimeout(timer);
     } else if (minutoJogo >= 90 && dadosSala?.resultado) {
-      // Garante que o placar no minuto 90 é exatamente o final
       setPlacarLocal({ meu: dadosSala.resultado[meuId] || 0, op: dadosSala.resultado[outroJogadorId] || 0 });
     }
   }, [dadosSala?.status, minutoJogo, dadosSala?.resultado]);
@@ -168,16 +160,38 @@ export default function SalaPartida() {
     await updateDoc(doc(db, "salas", salaId), { [`nomesTimes.${meuId}`]: nomeTimeTemp.trim() });
   };
 
+  // ⚠️ AQUI ESTÁ A CORREÇÃO PRINCIPAL: SORTEIO DA CPU AUTOMÁTICA
   const handleComecarDraft = async () => {
-    const jogadoresConectados = dadosSala.jogadores || [];
     const tempoConfig = dadosSala.configuracoes.tempoJogada || 30;
+    const timesIniciais: any = {
+      [jogadoresConectados[0]]: {} 
+    };
+    const nomesAtuais = dadosSala.nomesTimes || {};
+
+    if (isSolo) {
+      // Se estiver jogando contra a máquina, sorteia uma Seleção Clássica
+      const cpuSorteada = selecoesMock[Math.floor(Math.random() * selecoesMock.length)];
+      const slotsDefault = ['gol', 'zag1', 'zag2', 'le', 'ld', 'vol', 'mc1', 'mc2', 'pe', 'pd', 'ca'];
+      const timeFormatadoCPU: any = {};
+      
+      // Preenche os 11 slots com os jogadores da seleção sorteada
+      slotsDefault.forEach((slot, index) => {
+        timeFormatadoCPU[slot] = cpuSorteada.jogadores[index] || cpuSorteada.jogadores[0];
+      });
+
+      timesIniciais['CPU'] = timeFormatadoCPU;
+      nomesAtuais['CPU'] = `${cpuSorteada.pais} ${cpuSorteada.ano}`;
+    } else {
+      timesIniciais[jogadoresConectados[1]] = {};
+    }
 
     await updateDoc(doc(db, "salas", salaId), {
       status: 'draft',
       turnoAtual: jogadoresConectados[0], 
       tempoFim: Date.now() + (tempoConfig * 1000), 
       jogadoresDraftados: [], 
-      times: { [jogadoresConectados[0]]: {}, [jogadoresConectados[1] || 'CPU']: {} }
+      times: timesIniciais,
+      nomesTimes: nomesAtuais
     });
   };
 
@@ -192,46 +206,43 @@ export default function SalaPartida() {
     }, 1000);
   };
 
-  // ALOCAR JOGADOR E VERIFICAR FIM DO DRAFT
   const alocarJogador = async (posId: string, jogador: Jogador) => {
     const tempoConfig = dadosSala.configuracoes.tempoJogada || 30;
     const meuTime = dadosSala.times?.[meuId] || {};
     const novoTime = { ...meuTime, [posId]: jogador };
 
-    const jogadoresConectados = dadosSala.jogadores || [];
-    const outroJogador = jogadoresConectados.find((id: string) => id !== meuId) || meuId;
-    const timeOponente = dadosSala.times?.[outroJogador] || {};
+    const timeOponente = dadosSala.times?.[outroJogadorId] || {};
 
-    // VERIFICA SE OS DOIS TIMES ESTÃO COMPLETOS (11 jogadores)
     const meuAcabou = Object.keys(novoTime).length === 11;
     const opAcabou = Object.keys(timeOponente).length === 11;
 
     if (meuAcabou && opAcabou) {
-      // INICIA A SIMULAÇÃO (Calcula o resultado final antes de mudar de tela)
+      // SE TODOS TERMINAREM (CPU já termina no início), INICIA SIMULAÇÃO
       let ataqueMeu = Object.values(novoTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11;
       let defesaOp = Object.values(timeOponente).reduce((a:any, j:any) => a + j.defesa, 0) / 11;
       let ataqueOp = Object.values(timeOponente).reduce((a:any, j:any) => a + j.ataque, 0) / 11;
       let defesaMeu = Object.values(novoTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11;
 
-      // Cálculo de Gols baseado em OVR com fator sorte (0 a 3 gols extras)
       const golsMeu = Math.max(0, Math.round((ataqueMeu - defesaOp) / 5) + Math.floor(Math.random() * 3));
       const golsOp = Math.max(0, Math.round((ataqueOp - defesaMeu) / 5) + Math.floor(Math.random() * 3));
 
       await updateDoc(doc(db, "salas", salaId), {
         [`times.${meuId}`]: novoTime, 
         jogadoresDraftados: arrayUnion(jogador.id),
-        status: 'simulacao', // MUDA PARA A TELA DE SIMULAÇÃO
+        status: 'simulacao', 
         resultado: {
           [meuId]: golsMeu,
-          [outroJogador]: golsOp
+          [outroJogadorId]: golsOp
         }
       });
     } else {
-      // SEGUE O JOGO NORMAL
+      // ⚠️ O TURNO CONTINUA SENDO SEU se for "Solo", ou passa se for contra humano
+      const proximoTurno = isSolo ? meuId : outroJogadorId;
+
       await updateDoc(doc(db, "salas", salaId), {
         [`times.${meuId}`]: novoTime, 
         jogadoresDraftados: arrayUnion(jogador.id), 
-        turnoAtual: outroJogador, 
+        turnoAtual: proximoTurno, 
         tempoFim: Date.now() + (tempoConfig * 1000) 
       });
     }
@@ -252,23 +263,20 @@ export default function SalaPartida() {
 
   if (carregando) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-500 animate-pulse">Conectando...</div>;
 
-  // Variáveis Globais de Leitura
-  const jogadoresConectados = dadosSala?.jogadores || [];
-  const outroJogadorId = jogadoresConectados.find((id: string) => id !== meuId) || meuId;
   const meuNomeTime = dadosSala?.nomesTimes?.[meuId] || 'Seu Time';
-  const oponenteNomeTime = outroJogadorId ? (dadosSala?.nomesTimes?.[outroJogadorId] || 'CPU') : 'CPU';
+  const oponenteNomeTime = dadosSala?.nomesTimes?.[outroJogadorId] || 'CPU Clássica';
 
   // ==========================================
-  // TELA 3: SIMULAÇÃO DA PARTIDA (NOVA)
+  // TELA 3: SIMULAÇÃO DA PARTIDA
   // ==========================================
   if (dadosSala?.status === 'simulacao') {
     const meuTime = dadosSala.times?.[meuId] || {};
     const opTime = dadosSala.times?.[outroJogadorId] || {};
     
-    const meuAtaque = Math.round(Object.values(meuTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11);
-    const minhaDefesa = Math.round(Object.values(meuTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11);
-    const opAtaque = Math.round(Object.values(opTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11);
-    const opDefesa = Math.round(Object.values(opTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11);
+    const meuAtaque = Math.round(Object.values(meuTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11) || 0;
+    const minhaDefesa = Math.round(Object.values(meuTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11) || 0;
+    const opAtaque = Math.round(Object.values(opTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11) || 0;
+    const opDefesa = Math.round(Object.values(opTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11) || 0;
 
     const isFim = minutoJogo >= 90;
     const ganhei = placarLocal.meu > placarLocal.op;
@@ -278,7 +286,6 @@ export default function SalaPartida() {
       <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col items-center justify-center relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black pointer-events-none z-0"></div>
         
-        {/* CRONÓMETRO E PLACAR CENTRAL */}
         <div className="relative z-10 w-full max-w-4xl text-center mb-12">
           <div className="inline-block bg-slate-900/80 border border-slate-700 px-8 py-3 rounded-full mb-6 shadow-2xl backdrop-blur-md">
             <span className="text-emerald-500 font-mono font-black text-2xl tracking-widest">
@@ -318,14 +325,13 @@ export default function SalaPartida() {
           </div>
         </div>
 
-        {/* MENSAGEM FINAL / PROGRESSO */}
         <div className="relative z-10 w-full max-w-xl">
           {!isFim ? (
             <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
               <div className="h-full bg-emerald-500 transition-all duration-100 ease-linear" style={{ width: `${(minutoJogo / 90) * 100}%` }}></div>
             </div>
           ) : (
-            <div className={`p-6 rounded-2xl text-center border-2 animate-bounce-short shadow-2xl
+            <div className={`p-6 rounded-2xl text-center border-2 shadow-2xl
               ${empate ? 'bg-slate-800 border-slate-600' : ganhei ? 'bg-emerald-900/50 border-emerald-500' : 'bg-red-900/50 border-red-500'}`}>
               <h1 className={`text-5xl font-black uppercase tracking-tighter ${empate ? 'text-white' : ganhei ? 'text-emerald-400' : 'text-red-400'}`}>
                 {empate ? 'EMPATE TÉCNICO' : ganhei ? 'VITÓRIA HISTÓRICA!' : 'DERROTA ESMAGADORA'}
@@ -341,7 +347,7 @@ export default function SalaPartida() {
   }
 
   // ==========================================
-  // TELA 1: PREPARAÇÃO (MANTIDA)
+  // TELA 1: PREPARAÇÃO
   // ==========================================
   if (dadosSala?.status === 'aguardando_jogadores') {
     const tamanhoChave = dadosSala.configuracoes?.tamanhoChave || 2; 
@@ -366,7 +372,7 @@ export default function SalaPartida() {
                 const isHuman = index < jogadoresConectados.length;
                 const jogId = jogadoresConectados[index];
                 const isMe = jogId === meuId;
-                const nomeTeam = isHuman ? (dadosSala.nomesTimes?.[jogId] || `FC Convidado ${index + 1}`) : `CPU Bot ${index + 1}`;
+                const nomeTeam = isHuman ? (dadosSala.nomesTimes?.[jogId] || `FC Convidado ${index + 1}`) : `CPU Seleção Histórica`;
                 return (
                   <div key={index} className={`p-4 rounded-xl border flex items-center gap-4 transition-all ${isMe ? 'bg-emerald-950/30 border-emerald-500/50' : isHuman ? 'bg-blue-950/20 border-blue-900/50' : 'bg-slate-950/50 border-slate-800 border-dashed'}`}>
                     <div className={`w-10 h-10 rounded flex items-center justify-center font-black text-xs ${isMe ? 'bg-emerald-600 text-white' : isHuman ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-500'}`}>{isHuman ? `P${index + 1}` : 'CPU'}</div>
@@ -382,15 +388,12 @@ export default function SalaPartida() {
   }
 
   // ==========================================
-  // TELA 2: GAMEPLAY (DRAFT)
+  // TELA 2: GAMEPLAY (DRAFT PARA O PLAYER)
   // ==========================================
   const podeMudarTatica = dadosSala?.configuracoes?.taticaInGame;
   const meuTimeEscalado = dadosSala?.times?.[meuId] || {}; 
   const totalSlots = 11; 
   const totalEscalados = Object.keys(meuTimeEscalado).length;
-
-  const timeOponente = outroJogadorId ? dadosSala?.times?.[outroJogadorId] || {} : {};
-  const totalEscaladosOp = Object.keys(timeOponente).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans h-screen overflow-hidden flex relative">
@@ -447,6 +450,7 @@ export default function SalaPartida() {
       <main className="flex-1 flex flex-col items-center justify-center p-6 z-10">
         <div className="flex items-center justify-between w-full max-w-2xl mb-4">
           <h2 className="text-xl font-black text-emerald-400 uppercase tracking-widest bg-slate-900/80 px-4 py-2 rounded-full border border-slate-800">{meuNomeTime}</h2>
+          {isSolo && <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-900/80 px-4 py-2 rounded-full border border-slate-800">VS: {oponenteNomeTime}</h2>}
         </div>
         <Campo formacaoAtiva={formacao} jogadoresEscalados={meuTimeEscalado} isAlocando={!!jogadorSelecionado} onSlotClick={handleSlotClick} />
       </main>
