@@ -7,35 +7,43 @@ import { doc, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
 import { selecoesMock, Selecao, Jogador } from '../lib/selecoes';
 import { mapFormacoes } from '../lib/formacoes';
 
+const mapaPosicoes: Record<string, string[]> = {
+  'GOL': ['gol'],
+  'ZAG': ['zag1', 'zag2', 'zag3'],
+  'LD':  ['ld', 'ala_d', 'md'],
+  'LE':  ['le', 'ala_e', 'me'],
+  'VOL': ['vol', 'vol1', 'vol2', 'mc1', 'mc2'],
+  'MC':  ['mc1', 'mc2', 'mei', 'vol', 'vol1', 'vol2'],
+  'MEI': ['mei', 'mc1', 'mc2', 'pe', 'pd', 'me', 'md'],
+  'ME':  ['me', 'pe', 'ala_e', 'mc1'],
+  'MD':  ['md', 'pd', 'ala_d', 'mc2'],
+  'PE':  ['pe', 'me', 'ata1', 'ca'],
+  'PD':  ['pd', 'md', 'ata2', 'ca'],
+  'ATA': ['ata1', 'ata2', 'ca', 'pe', 'pd'],
+  'CA':  ['ca', 'ata1', 'ata2']
+};
+
 export function useSalaPartida(salaId: string) {
   const router = useRouter();
 
-  // 1. Estados Táticos e Visuais
   const [formacao, setFormacao] = useState<string>('4-3-3');
   const [estilo, setEstilo] = useState('Equilibrado');
   const [nomeTimeTemp, setNomeTimeTemp] = useState('');
 
-  // 2. Estados Globais e Conexão
   const [dadosSala, setDadosSala] = useState<any>(null);
   const [carregando, setCarregando] = useState(true);
   const [meuId, setMeuId] = useState<string>('');
 
-  // 3. Estados do Draft
   const [isRolling, setIsRolling] = useState(false);
   const [selecaoSorteada, setSelecaoSorteada] = useState<Selecao | null>(null);
   const [tempoRestante, setTempoRestante] = useState(0);
   const [jogadorSelecionado, setJogadorSelecionado] = useState<Jogador | null>(null);
 
-  // 4. Estados da Simulação
   const [minutoJogo, setMinutoJogo] = useState(0);
   const [placarLocal, setPlacarLocal] = useState<{meu: number, op: number}>({ meu: 0, op: 0 });
 
-  // ==========================================
-  // EFEITO 1: CONEXÃO COM O FIREBASE
-  // ==========================================
   useEffect(() => {
     if (!salaId) return;
-
     let localId = sessionStorage.getItem('jogadorId');
     if (!localId) {
       localId = 'JOG_' + Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -49,7 +57,6 @@ export function useSalaPartida(salaId: string) {
         const dados = docSnap.data();
         setDadosSala(dados);
         setCarregando(false);
-
         if (!dados.nomesTimes?.[localId] && !nomeTimeTemp) setNomeTimeTemp('FC ' + localId.substring(4));
         else if (dados.nomesTimes?.[localId] && !nomeTimeTemp) setNomeTimeTemp(dados.nomesTimes[localId]);
 
@@ -67,15 +74,12 @@ export function useSalaPartida(salaId: string) {
     return () => unsub();
   }, [salaId, router]);
 
-  // Constantes Derivadas Baseadas no Firebase
   const isMeuTurno = dadosSala?.turnoAtual === meuId;
   const isAdmin = dadosSala?.jogadores?.[0] === meuId;
   const jogadoresConectados = dadosSala?.jogadores || [];
-  const outroJogadorId = jogadoresConectados.find((id: string) => id !== meuId) || meuId;
+  
+  const slotsValidos = jogadorSelecionado ? (mapaPosicoes[jogadorSelecionado.posicao] || []) : [];
 
-  // ==========================================
-  // EFEITO 2: RELÓGIO DO DRAFT / AUTO-PICK
-  // ==========================================
   useEffect(() => {
     if (dadosSala?.status === 'draft' && dadosSala?.tempoFim) {
       const interval = setInterval(() => {
@@ -88,28 +92,7 @@ export function useSalaPartida(salaId: string) {
     }
   }, [dadosSala?.status, dadosSala?.tempoFim, isMeuTurno]);
 
-  // ==========================================
-  // EFEITO 3: MOTOR DE SIMULAÇÃO DOS GOLS
-  // ==========================================
-  useEffect(() => {
-    if (dadosSala?.status === 'simulacao' && minutoJogo < 90 && dadosSala.resultado) {
-      const timer = setTimeout(() => {
-        setMinutoJogo(prev => prev + 2);
-        const progresso = minutoJogo / 90;
-        setPlacarLocal({
-          meu: Math.floor((dadosSala.resultado[meuId] || 0) * progresso),
-          op: Math.floor((dadosSala.resultado[outroJogadorId] || 0) * progresso)
-        });
-      }, 100);
-      return () => clearTimeout(timer);
-    } else if (minutoJogo >= 90 && dadosSala?.resultado) {
-      setPlacarLocal({ meu: dadosSala.resultado[meuId] || 0, op: dadosSala.resultado[outroJogadorId] || 0 });
-    }
-  }, [dadosSala?.status, minutoJogo, dadosSala?.resultado]);
-
-  // ==========================================
-  // FUNÇÕES DE AÇÃO DO JOGO
-  // ==========================================
+  // AÇÕES
   const executarAutoPick = async () => {
     if (!dadosSala) return;
     const todosJogadores = selecoesMock.flatMap(s => s.jogadores);
@@ -118,10 +101,20 @@ export function useSalaPartida(salaId: string) {
 
     const jogadorAleatorio = disponiveis[Math.floor(Math.random() * disponiveis.length)];
     const meuTime = dadosSala.times?.[meuId] || {};
-    const todosSlotsIds = ['gol', 'zag1', 'zag2', 'le', 'ld', 'vol', 'mc1', 'mc2', 'pe', 'pd', 'ca'];
-    const slotVazioId = todosSlotsIds.find(id => !meuTime[id]);
+    
+    const possiveisSlots = mapaPosicoes[jogadorAleatorio.posicao] || [];
+    const slotVazioId = possiveisSlots.find(id => !meuTime[id]);
 
-    if (slotVazioId) await alocarJogador(slotVazioId, jogadorAleatorio);
+    if (slotVazioId) {
+      await alocarJogador(slotVazioId, jogadorAleatorio);
+    } else {
+      const slotsDoEsquema = mapFormacoes[formacao].map(p => p.id);
+      const slotRealVazio = slotsDoEsquema.find(id => !meuTime[id]);
+      if (slotRealVazio) {
+        const compativel = disponiveis.find(p => (mapaPosicoes[p.posicao] || []).includes(slotRealVazio));
+        if (compativel) await alocarJogador(slotRealVazio, compativel);
+      }
+    }
   };
 
   const salvarNomeTime = async () => {
@@ -140,14 +133,31 @@ export function useSalaPartida(salaId: string) {
     });
   };
 
-  const handleRoll = () => {
+  // BROADCAST DO ROLAR DADO PARA OS OUTROS VEREM (CENSURADO)
+  const handleRoll = async () => {
     setIsRolling(true);
     setSelecaoSorteada(null);
     setJogadorSelecionado(null);
-    setTimeout(() => {
+
+    // Avisa todos que você está a rolar
+    await updateDoc(doc(db, "salas", salaId), {
+      'draftInfoSecundaria.isRolling': true,
+      'draftInfoSecundaria.pais': null,
+      'draftInfoSecundaria.ano': null
+    });
+
+    setTimeout(async () => {
       const indiceAleatorio = Math.floor(Math.random() * selecoesMock.length);
-      setSelecaoSorteada(selecoesMock[indiceAleatorio]);
+      const sel = selecoesMock[indiceAleatorio];
+      setSelecaoSorteada(sel);
       setIsRolling(false);
+
+      // Partilha a nação sorteada, mas ESCONDE os jogadores dos adversários!
+      await updateDoc(doc(db, "salas", salaId), {
+        'draftInfoSecundaria.isRolling': false,
+        'draftInfoSecundaria.pais': sel.pais,
+        'draftInfoSecundaria.ano': sel.ano
+      });
     }, 1000);
   };
 
@@ -155,38 +165,46 @@ export function useSalaPartida(salaId: string) {
     const tempoConfig = dadosSala.configuracoes.tempoJogada || 30;
     const meuTime = dadosSala.times?.[meuId] || {};
     const novoTime = { ...meuTime, [posId]: jogador };
-    const timeOponente = dadosSala.times?.[outroJogadorId] || {};
+    
+    // LÓGICA DE TURNOS MULTI-PLAYER (Suporta 2, 3, 4+ jogadores)
+    const indexAtual = jogadoresConectados.indexOf(meuId);
+    const proximoIndex = (indexAtual + 1) % jogadoresConectados.length;
+    const proximoJogador = jogadoresConectados[proximoIndex];
 
-    const meuAcabou = Object.keys(novoTime).length === 11;
-    const opAcabou = Object.keys(timeOponente).length === 11;
+    const todosTimesEscalados = { ...dadosSala.times, [meuId]: novoTime };
+    
+    // Verifica se TODOS os humanos terminaram de montar os seus 11 jogadores
+    const todosAcabaram = jogadoresConectados.every((id: string) => Object.keys(todosTimesEscalados[id] || {}).length === 11);
 
-    if (meuAcabou && opAcabou) {
-      // CORREÇÃO DUPLA APLICADA AQUI PARA PASSAR NA VERCEL:
-      const meuTimeTyped = novoTime as unknown as Record<string, Jogador>;
-      const opTimeTyped = timeOponente as unknown as Record<string, Jogador>;
+    if (todosAcabaram) {
+      // Como a simulação atual é 1v1, pegamos no primeiro e segundo jogador
+      const p1 = jogadoresConectados[0];
+      const p2 = jogadoresConectados[1] || 'CPU';
+      
+      const p1Time = todosTimesEscalados[p1] as unknown as Record<string, Jogador>;
+      const p2Time = todosTimesEscalados[p2] as unknown as Record<string, Jogador>;
 
-      let ataqueMeu = Object.values(meuTimeTyped).reduce((a, j) => a + j.ataque, 0) / 11;
-      let defesaOp = Object.values(opTimeTyped).reduce((a, j) => a + j.defesa, 0) / 11;
-      let ataqueOp = Object.values(opTimeTyped).reduce((a, j) => a + j.ataque, 0) / 11;
-      let defesaMeu = Object.values(meuTimeTyped).reduce((a, j) => a + j.defesa, 0) / 11;
+      let ataqueP1 = Object.values(p1Time).reduce((a, j) => a + j.ataque, 0) / 11;
+      let defesaP2 = Object.values(p2Time).reduce((a, j) => a + j.defesa, 0) / 11;
+      let ataqueP2 = Object.values(p2Time).reduce((a, j) => a + j.ataque, 0) / 11;
+      let defesaP1 = Object.values(p1Time).reduce((a, j) => a + j.defesa, 0) / 11;
 
-      const golsMeu = Math.max(0, Math.round((ataqueMeu - defesaOp) / 5) + Math.floor(Math.random() * 3));
-      const golsOp = Math.max(0, Math.round((ataqueOp - defesaMeu) / 5) + Math.floor(Math.random() * 3));
+      const golsP1 = Math.max(0, Math.round((ataqueP1 - defesaP2) / 5) + Math.floor(Math.random() * 3));
+      const golsP2 = Math.max(0, Math.round((ataqueP2 - defesaP1) / 5) + Math.floor(Math.random() * 3));
 
       await updateDoc(doc(db, "salas", salaId), {
         [`times.${meuId}`]: novoTime, 
         jogadoresDraftados: arrayUnion(jogador.id),
         status: 'simulacao',
-        resultado: {
-          [meuId]: golsMeu,
-          [outroJogadorId]: golsOp
-        }
+        draftInfoSecundaria: null, // Limpa o painel de espionagem
+        resultado: { [p1]: golsP1, [p2]: golsP2 }
       });
     } else {
       await updateDoc(doc(db, "salas", salaId), {
         [`times.${meuId}`]: novoTime, 
         jogadoresDraftados: arrayUnion(jogador.id), 
-        turnoAtual: outroJogadorId, 
+        turnoAtual: proximoJogador, // Passa para a próxima pessoa da roda
+        draftInfoSecundaria: null, // Limpa para o próximo rolar
         tempoFim: Date.now() + (tempoConfig * 1000) 
       });
     }
@@ -196,20 +214,34 @@ export function useSalaPartida(salaId: string) {
   };
 
   const handleSlotClick = (posId: string) => {
-    if (!isMeuTurno) return;
+    if (!isMeuTurno || !jogadorSelecionado || !slotsValidos.includes(posId)) return;
     const meuTimeEscalado = dadosSala?.times?.[meuId] || {};
-    if (jogadorSelecionado && !meuTimeEscalado[posId]) {
-      alocarJogador(posId, jogadorSelecionado);
-    } else if (!jogadorSelecionado && !meuTimeEscalado[posId]) {
-      alert("Primeiro, selecione um jogador da lista à esquerda!");
-    }
+    if (!meuTimeEscalado[posId]) alocarJogador(posId, jogadorSelecionado);
   };
 
-  // 5. Retorna as funções e dados necessários para a Tela Visual (page.tsx)
+  const handleMudarFormacao = async (novaFormacao: string) => { /* Mantido igual */
+    if (formacao === novaFormacao) return; 
+    setFormacao(novaFormacao);
+    const meuTimeAtual = dadosSala?.times?.[meuId] || {};
+    const slotsAtualizados = mapFormacoes[novaFormacao].map(p => p.id);
+    const novoTime: Record<string, Jogador> = {};
+    const orfaos: Jogador[] = []; 
+    Object.keys(meuTimeAtual).forEach(posId => {
+      if (slotsAtualizados.includes(posId)) novoTime[posId] = meuTimeAtual[posId];
+      else orfaos.push(meuTimeAtual[posId]);
+    });
+    orfaos.forEach(jogadorOrfao => {
+      const slotsPossiveis = mapaPosicoes[jogadorOrfao.posicao] || [];
+      const slotLivreCompativel = slotsAtualizados.find(id => slotsPossiveis.includes(id) && !novoTime[id]);
+      if (slotLivreCompativel) novoTime[slotLivreCompativel] = jogadorOrfao;
+    });
+    await updateDoc(doc(db, "salas", salaId), { [`times.${meuId}`]: novoTime });
+  };
+
   return {
-    dadosSala, carregando, meuId, outroJogadorId, isMeuTurno, isAdmin, jogadoresConectados,
-    formacao, setFormacao, estilo, setEstilo, nomeTimeTemp, setNomeTimeTemp, salvarNomeTime,
-    isRolling, selecaoSorteada, tempoRestante, jogadorSelecionado, setJogadorSelecionado,
+    dadosSala, carregando, meuId, isMeuTurno, isAdmin, jogadoresConectados,
+    formacao, setFormacao: handleMudarFormacao, estilo, setEstilo, nomeTimeTemp, setNomeTimeTemp, salvarNomeTime,
+    isRolling, selecaoSorteada, tempoRestante, jogadorSelecionado, setJogadorSelecionado, slotsValidos,
     minutoJogo, placarLocal, handleComecarDraft, handleRoll, handleSlotClick, router
   };
 }
