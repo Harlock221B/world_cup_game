@@ -217,22 +217,26 @@ export default function SalaPartida() {
     const opAcabou = Object.keys(timeOponente).length === 11;
 
     if (meuAcabou && opAcabou) {
-      // SE TODOS TERMINAREM (CPU já termina no início), INICIA SIMULAÇÃO
-      let ataqueMeu = Object.values(novoTime).reduce((a:any, j:any) => a + j.ataque, 0) / 11;
-      let defesaOp = Object.values(timeOponente).reduce((a:any, j:any) => a + j.defesa, 0) / 11;
-      let ataqueOp = Object.values(timeOponente).reduce((a:any, j:any) => a + j.ataque, 0) / 11;
-      let defesaMeu = Object.values(novoTime).reduce((a:any, j:any) => a + j.defesa, 0) / 11;
+      // Forçamos o tipo para tratar os valores como array de Jogadores
+      const meuTimeArray = Object.values(novoTime) as Jogador[];
+      const opTimeArray = Object.values(timeOponente) as Jogador[];
 
+      let ataqueMeu = meuTimeArray.reduce((a, j) => a + j.ataque, 0) / 11;
+      let defesaOp = opTimeArray.reduce((a, j) => a + j.defesa, 0) / 11;
+      let ataqueOp = opTimeArray.reduce((a, j) => a + j.ataque, 0) / 11;
+      let defesaMeu = meuTimeArray.reduce((a, j) => a + j.defesa, 0) / 11;
+
+      // Cálculo de Gols
       const golsMeu = Math.max(0, Math.round((ataqueMeu - defesaOp) / 5) + Math.floor(Math.random() * 3));
       const golsOp = Math.max(0, Math.round((ataqueOp - defesaMeu) / 5) + Math.floor(Math.random() * 3));
 
       await updateDoc(doc(db, "salas", salaId), {
         [`times.${meuId}`]: novoTime, 
         jogadoresDraftados: arrayUnion(jogador.id),
-        status: 'simulacao', 
+        status: 'simulacao',
         resultado: {
           [meuId]: golsMeu,
-          [outroJogadorId]: golsOp
+          [outroJogador]: golsOp
         }
       });
     } else {
