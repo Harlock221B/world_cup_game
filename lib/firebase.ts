@@ -1,5 +1,5 @@
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCOclosvjHoLlZ0oz0QxfvuG0QGm1fpkrA",
@@ -11,6 +11,10 @@ const firebaseConfig = {
   measurementId: "G-NZ5BGRBW85"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+// Garante que o Firebase não seja inicializado duas vezes pelo Next.js
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+// Inicializa o banco de dados (Firestore)
+const db = getFirestore(app);
+
+export { db };

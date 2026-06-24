@@ -2,49 +2,72 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Header from '../components/layout/Header'; // Certifique-se de que o caminho das pastas está correto
+// Importa apenas a base de dados (db)
+import { db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore'; 
+
+import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 
 export default function HomeLobby() {
   const router = useRouter();
 
-  // Estados de Configuração da Partida
-  const [modoAtivo, setModoAtivo] = useState('matamata'); // 'local', 'final', 'matamata'
+  const [modoAtivo, setModoAtivo] = useState('matamata');
   const [dificuldade, setDificuldade] = useState('classico');
   const [tamanhoChave, setTamanhoChave] = useState(8);
   const [taticaInGame, setTaticaInGame] = useState(true);
   const [draftModo, setDraftModo] = useState('turnos');
   const [tempoJogada, setTempoJogada] = useState(30);
+  
+  const [isCarregando, setIsCarregando] = useState(false);
 
-  const handleCriarSala = () => {
-    // Gera um código de 6 caracteres aleatórios para a sala (Ex: A8B9C2)
-    const salaGerada = Math.random().toString(36).substring(2, 8).toUpperCase();
+  // Cria a sala DIRETAMENTE sem pedir login
+  const handleCriarSala = async () => {
+    setIsCarregando(true);
     
-    // Redireciona o jogador para a tela do Campo (In-Game)
-    router.push(`/sala/${salaGerada}`);
+    try {
+      const salaGerada = Math.random().toString(36).substring(2, 8).toUpperCase();
+      console.log("A criar sala aberta:", salaGerada);
+      
+      await setDoc(doc(db, "salas", salaGerada), {
+        id: salaGerada,
+        status: 'aguardando_jogadores',
+        criadaEm: new Date().toISOString(),
+        configuracoes: {
+          modo: modoAtivo,
+          dificuldade: dificuldade,
+          tamanhoChave: tamanhoChave,
+          taticaInGame: taticaInGame,
+          draftModo: draftModo,
+          tempoJogada: tempoJogada
+        },
+        jogadoresConectados: 1
+      });
+
+      router.push(`/sala/${salaGerada}`);
+      
+    } catch (error) {
+      console.error("Erro ao criar a sala:", error);
+      alert("Erro ao ligar à base de dados. Veja a consola (F12).");
+    } finally {
+      setIsCarregando(false); 
+    }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col relative selection:bg-emerald-500 selection:text-slate-950 pb-20">
       
-      {/* Efeito de Fundo (HUD Neon) */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black pointer-events-none z-0"></div>
 
-      {/* HEADER IMPORTADO */}
       <Header />
 
-      {/* MAIN LOBBY CONTENT */}
       <main className="relative z-10 w-full max-w-4xl mx-auto px-6 mt-10 grid grid-cols-1 md:grid-cols-3 gap-8">
         
-        {/* COLUNA ESQUERDA: Seleção de Modos */}
+        {/* COLUNA ESQUERDA */}
         <div className="md:col-span-1 space-y-4">
           <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500 mb-4">Escolha o Torneio</h2>
 
-          {/* Modo: Local */}
-          <button 
-            onClick={() => setModoAtivo('local')}
-            className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${modoAtivo === 'local' ? 'bg-slate-800/80 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-slate-900/50 border-slate-800 hover:bg-slate-800/50'}`}
-          >
+          <button onClick={() => setModoAtivo('local')} className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${modoAtivo === 'local' ? 'bg-slate-800/80 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-slate-900/50 border-slate-800 hover:bg-slate-800/50'}`}>
             <div className="flex items-center gap-3">
               <span className={`text-2xl font-black ${modoAtivo === 'local' ? 'text-emerald-400' : 'text-slate-700'}`}>01</span>
               <div>
@@ -54,11 +77,7 @@ export default function HomeLobby() {
             </div>
           </button>
 
-          {/* Modo: Final de Copa */}
-          <button 
-            onClick={() => setModoAtivo('final')}
-            className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${modoAtivo === 'final' ? 'bg-slate-800/80 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'bg-slate-900/50 border-slate-800 hover:bg-slate-800/50'}`}
-          >
+          <button onClick={() => setModoAtivo('final')} className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${modoAtivo === 'final' ? 'bg-slate-800/80 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'bg-slate-900/50 border-slate-800 hover:bg-slate-800/50'}`}>
             <div className="flex items-center gap-3">
               <span className={`text-2xl font-black ${modoAtivo === 'final' ? 'text-blue-400' : 'text-slate-700'}`}>02</span>
               <div>
@@ -68,11 +87,7 @@ export default function HomeLobby() {
             </div>
           </button>
 
-          {/* Modo: Mata-Mata */}
-          <button 
-            onClick={() => setModoAtivo('matamata')}
-            className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${modoAtivo === 'matamata' ? 'bg-slate-800/80 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-slate-900/50 border-slate-800 hover:bg-slate-800/50'}`}
-          >
+          <button onClick={() => setModoAtivo('matamata')} className={`w-full text-left p-4 rounded-xl border transition-all duration-300 ${modoAtivo === 'matamata' ? 'bg-slate-800/80 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-slate-900/50 border-slate-800 hover:bg-slate-800/50'}`}>
             <div className="flex items-center gap-3">
               <span className={`text-2xl font-black ${modoAtivo === 'matamata' ? 'text-amber-400' : 'text-slate-700'}`}>03</span>
               <div>
@@ -83,18 +98,14 @@ export default function HomeLobby() {
           </button>
         </div>
 
-        {/* COLUNA DIREITA: Configurações do Modo Selecionado */}
+        {/* COLUNA DIREITA */}
         <div className="md:col-span-2 bg-slate-900/40 border border-slate-800 rounded-2xl p-6 backdrop-blur-md">
           
           <div className="border-b border-slate-800 pb-4 mb-6">
-            <h2 className="text-xl font-black text-white uppercase tracking-tight">
-              Parâmetros da Partida
-            </h2>
+            <h2 className="text-xl font-black text-white uppercase tracking-tight">Parâmetros da Partida</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            
-            {/* Bloco 1: Dificuldade e Tamanho (Só pro Mata-Mata) */}
             <div className="space-y-6">
               {modoAtivo === 'matamata' && (
                 <>
@@ -117,7 +128,6 @@ export default function HomeLobby() {
                 </>
               )}
 
-              {/* Táticas In-Game */}
               <div>
                 <label className="block text-[10px] font-bold tracking-widest text-emerald-500 uppercase mb-2">Táticas In-Game</label>
                 <div className="flex bg-slate-950 rounded-lg p-1 border border-slate-800">
@@ -127,7 +137,6 @@ export default function HomeLobby() {
               </div>
             </div>
 
-            {/* Bloco 2: Regras do Draft e Ação */}
             <div className="space-y-6">
               <div>
                 <label className="block text-[10px] font-bold tracking-widest text-slate-500 uppercase mb-2">Tempo do Turno</label>
@@ -146,26 +155,26 @@ export default function HomeLobby() {
                 </div>
               </div>
             </div>
-
           </div>
 
-          {/* BOTÃO PRINCIPAL */}
-          <div className="mt-10 pt-6 border-t border-slate-800">
+          <div className="mt-10 pt-6 border-t border-slate-800 relative z-50">
             <button 
               onClick={handleCriarSala}
-              className="w-full py-5 rounded-xl font-black uppercase tracking-[0.2em] transition-all duration-300 bg-emerald-500 text-slate-950 hover:bg-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] border border-emerald-400"
+              disabled={isCarregando}
+              className={`w-full py-5 rounded-xl font-black uppercase tracking-[0.2em] transition-all duration-300 border 
+                ${isCarregando 
+                  ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait shadow-none' 
+                  : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] border-emerald-400'
+                }`}
             >
-              Iniciar Partida
+              {isCarregando ? 'A LIGAR AO SERVIDOR...' : 'INICIAR PARTIDA'}
             </button>
           </div>
 
         </div>
-
       </main>
 
-      {/* FOOTER IMPORTADO */}
       <Footer />
-
     </div>
   );
 }
